@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IM GYM PT (아이엠짐PT) - 스마트 예약 & 관리 (버전 3)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts: Inter & Noto Sans KR -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            sand: {
+              50: '#FAF8F5',
+              100: '#F3EDE2',
+              200: '#E6DCCF',
+              300: '#D5C4B0',
+              400: '#C2AA90',
+              500: '#AD8E6E',
+              600: '#947557',
+              700: '#7B5E43',
+              800: '#5C4531',
+              900: '#3D2D20',
+            },
+            khaki: {
+              400: '#7E8B67',
+              500: '#64714D',
+              600: '#4B5637',
+            }
+          },
+          fontFamily: {
+            sans: ['Noto Sans KR', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background-color: #FAF8F5;
+      color: #3D2D20;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 4px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #F3EDE2;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #C2AA90;
+      border-radius: 4px;
+    }
+    @keyframes pulse-light {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.03); }
+    }
+    .animate-pulse-light {
+      animation: pulse-light 1.5s infinite ease-in-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-sand-50 antialiased selection:bg-sand-200 selection:text-sand-900">
+  <div id="app" class="max-w-md mx-auto min-h-screen bg-sand-50 shadow-2xl relative flex flex-col pb-20 md:max-w-4xl md:pb-6 border-x border-sand-200/60">
+    <!-- Dynamic JS rendering target -->
+  </div>
+
+  <script>
+    // Global Application State (Single Session In-Memory Database - 3번 기준)
+    const STATE = {
+      currentUser: null, // null (logged out) or user object
+      isAdmin: false,
+      activeTab: 'booking', // 'booking', 'my-bookings', 'pass'
+      adminTab: 'schedule', // 'schedule', 'members'
+      
+      // Master Controls
+      scheduleOpen: true, // Emergency ON/OFF toggle
+      saturdayTimer: {
+        enabled: true,
+        openTime: '2026-10-31T09:00', // YYYY-MM-DDTHH:MM
+      },
+
+      // Members List (Initial Mock Data)
+      members: [
+        {
+          id: 'mem_minsu',
+          name: '김민수',
+          phone: '010-1234-5678',
+          password: '1234',
+          remTickets: 12,
+          totalTickets: 20,
+          startDate: '2026-10-01',
+          endDate: '2027-01-31',
+          memo: '하체 위주 운동 희망, 저녁 타임 선호',
+          badge: null
+        },
+        {
+          id: 'mem_younghee',
+          name: '이영희',
+          phone: '010-2222-3333',
+          password: '1234',
+          remTickets: 5,
+          totalTickets: 10,
+          startDate: '2026-10-01',
+          endDate: '2026-12-31',
+          memo: '어르신 회원님, 수요일 휴무 선호',
+          badge: null
+        },
+        {
+          id: 'mem_chulsoo',
+          name: '박철수',
+          phone: '010-5555-6666',
+          password: '1234',
+          remTickets: 2,
+          totalTickets: 10,
+          startDate: '2026-10-01',
+          endDate: '2026-11-30',
+          memo: '재등록 상담 예정, 허리 주의',
+          badge: 'Low'
+        }
+      ],
+
+      // Selected Date for Browsing (Default: 2026-10-28 Wednesday)
+      selectedDate: '2026-10-28',
+
+      // Time Slots Database: key format `YYYY-MM-DD_HH:MM`
+      slots: {
+        '2026-10-28_09:00': { bookedBy: 'mem_minsu', waitlist: ['mem_younghee'], blocked: false },
+        '2026-10-28_09:30': { bookedBy: 'mem_younghee', waitlist: ['mem_minsu'], blocked: false },
+        '2026-10-28_10:00': { bookedBy: null, waitlist: [], blocked: false },
+        '2026-10-28_10:30': { bookedBy: null, waitlist: [], blocked: true },
+      },
+
+      // User Timelines (History)
+      histories: {
+        'mem_minsu': [
+          { type: 'BOOKING', title: '09:00 수업 예약 완료', date: '2026-10-28 09:00', timestamp: Date.now() - 3600000 },
+          { type: 'WAITLIST', title: '09:30 수업 대기 등록', date: '2026-10-28 09:30', timestamp: Date.now() - 1800000 }
+        ],
+        'mem_younghee': [
+          { type: 'BOOKING', title: '09:30 수업 예약 완료', date: '2026-10-28 09:30', timestamp: Date.now() - 3000000 },
+          { type: 'WAITLIST', title: '09:00 수업 대기 등록', date: '2026-10-28 09:00', timestamp: Date.now() - 1500000 }
+        ],
+        'mem_chulsoo': []
+      },
+
+      // Active Proposals (60s Countdown for Waitlist Offer)
+      activeProposal: null,
+
+      // Anti-Cheating Cooldown Timers (60s lockout for slots cancelled by user)
+      cooldowns: {},
+
+      // UI Temporary Modals (Strictly bound to active rendering session)
+      modal: null,
+      
+      // Notifications System
+      notifications: [
+        { id: 1, userId: 'mem_younghee', message: '대기 중인 09:00 수업 자리가 날 경우 60초 변경 팝업이 즉시 전송됩니다.', read: false, time: '오전 09:05' }
+      ],
+
+      // Member search query in admin
+      searchQuery: ''
+    };
+
+    const STORAGE_KEY_USER = 'imgym_saved_user';
+    const STORAGE_KEY_ADMIN = 'imgym_saved_admin';
+
+    // Core Init Function
+    function initApp() {
+      const savedUser = localStorage.getItem(STORAGE_KEY_USER);
+      if (savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+          const found = STATE.members.find(m => m.phone === parsed.phone && m.password === parsed.password);
+          if (found) {
+            STATE.currentUser = found;
+            STATE.isAdmin = false;
+          }
+        } catch(e) {}
+      }
+
+      // Interval timer running every 1000ms for smooth 60s countdown display
+      setInterval(tickTimers, 1000);
+      render();
+    }
+
+    function tickTimers() {
+      const now = Date.now();
+      let shouldRender = false;
+
+      // Check proposal expiration
+      if (STATE.activeProposal && STATE.activeProposal.expiresAt <= now) {
+        const prop = STATE.activeProposal;
+        STATE.activeProposal = null;
+        notifyUser(prop.userId, '⏰ 60초 변경 시간이 만료되어 대기 우선권이 다음 회원에게 이관되었습니다.');
+        
+        const slotKey = `${prop.targetSlotDate}_${prop.targetSlotTime}`;
+        if (STATE.slots[slotKey]) {
+          STATE.slots[slotKey].waitlist = STATE.slots[slotKey].waitlist.filter(id => id !== prop.userId);
+        }
+        shouldRender = true;
+      }
+
+      if (shouldRender) render();
+    }
+
+    // --- LOGIC HANDLERS ---
+
+    function handleLogin(phone, password, remember) {
+      if (!phone || !password) {
+        showAlert('안내', '휴대폰 번호와 비밀번호를 모두 입력해 주세요.');
+        return;
+      }
+      const user = STATE.members.find(m => m.phone === phone && m.password === password);
+      if (user) {
+        STATE.currentUser = user;
+        STATE.isAdmin = false;
+        STATE.modal = null; // Clean modal state on login
+        if (remember) {
+          localStorage.setItem(STORAGE_KEY_USER, JSON.stringify({ phone, password }));
+        } else {
+          localStorage.removeItem(STORAGE_KEY_USER);
+        }
+        render();
+      } else {
+        showAlert('로그인 실패', '일치하는 회원 정보가 없습니다. 전화번호 및 비밀번호를 확인하세요.');
+      }
+    }
+
+    function handleAdminLogin(password, remember) {
+      if (password === '2685') {
+        STATE.isAdmin = true;
+        STATE.currentUser = { name: '원장/트레이너 (관리자)', phone: 'admin' };
+        STATE.modal = null;
+        if (remember) {
+          localStorage.setItem(STORAGE_KEY_ADMIN, '2685');
+        } else {
+          localStorage.removeItem(STORAGE_KEY_ADMIN);
+        }
+        render();
+      } else {
+        showAlert('관리자 인증 실패', '비밀번호가 올바르지 않습니다. (기본: 2685)');
+      }
+    }
+
+    function handleLogout() {
+      STATE.currentUser = null;
+      STATE.isAdmin = false;
+      STATE.modal = null; // Clean modal state on logout
+      render();
+    }
+
+    // Quick Switcher with Instant Real-Time Notification Check & Modal Reset (3번 수정 적용!)
+    function switchUser(userId) {
+      STATE.modal = null; // 3번 수정: 회원 스위치 시 팝업 잔상이나 타회원 모달 이전 현상을 완벽히 초기화
+
+      if (userId === 'admin') {
+        STATE.isAdmin = true;
+        STATE.currentUser = { name: '원장/트레이너 (관리자)', phone: 'admin' };
+      } else {
+        const u = STATE.members.find(m => m.id === userId);
+        if (u) {
+          STATE.currentUser = u;
+          STATE.isAdmin = false;
+        }
+      }
+      render();
+    }
+
+    // Booking Action (Member) - Real-time Immediate Alert Triggering
+    function bookSlot(date, time) {
+      const user = STATE.currentUser;
+      if (!user || STATE.isAdmin) return;
+
+      const slotKey = `${date}_${time}`;
+      
+      if (!STATE.scheduleOpen) {
+        showAlert('예약 제한', '현재 관리자에 의해 스케줄 예약이 전면 통제 중입니다.');
+        return;
+      }
+
+      if (user.remTickets <= 0) {
+        showAlert('잔여 횟수 부족', '수강권 잔여 횟수가 0회입니다. 센터 관리자에게 재등록을 문의하세요!');
+        return;
+      }
+
+      const hasBookingToday = Object.keys(STATE.slots).some(k => k.startsWith(date) && STATE.slots[k].bookedBy === user.id);
+      if (hasBookingToday) {
+        // 3번 수정: 김민수가 예약 버튼을 누르는 순간 1초의 지연도 없이 1일 1회 제한 경고 모달을 본인에게 즉시 띄웁니다!
+        showAlert('1일 1회 제한', '하루에 확정 수업은 최대 1개만 예약할 수 있습니다.');
+        return;
+      }
+
+      const cooldownKey = `${user.id}_${slotKey}`;
+      if (STATE.cooldowns[cooldownKey] && STATE.cooldowns[cooldownKey] > Date.now()) {
+        const remSec = Math.ceil((STATE.cooldowns[cooldownKey] - Date.now()) / 1000);
+        showAlert('재예약 딜레이 제한', `취소 후 재예약은 ${remSec}초 후에 가능합니다. 공평한 대기 순서를 위해 잠시 대기해 주세요.`);
+        return;
+      }
+
+      if (!STATE.slots[slotKey]) {
+        STATE.slots[slotKey] = { bookedBy: null, waitlist: [], blocked: false };
+      }
+
+      const slot = STATE.slots[slotKey];
+      if (slot.blocked) {
+        showAlert('예약 불가', '해당 타임은 센터 휴무 또는 관리자 차단 시간입니다.');
+        return;
+      }
+
+      if (slot.bookedBy) {
+        showAlert('예약 마감', '이미 마감된 타임입니다.');
+        return;
+      }
+
+      slot.bookedBy = user.id;
+      user.remTickets -= 1;
+
+      addHistory(user.id, 'BOOKING', `${time} 수업 예약 완료 (1회 차감)`);
+      showAlert('예약 완료', `${date} ${time} 수업 예약이 완료되었습니다. (잔여 횟수: ${user.remTickets}회)`);
+      render();
+    }
+
+    // Waitlist Action (Member)
+    function joinWaitlist(date, time) {
+      const user = STATE.currentUser;
+      if (!user || STATE.isAdmin) return;
+
+      const slotKey = `${date}_${time}`;
+
+      const hasWaitlistToday = Object.keys(STATE.slots).some(k => 
+        k.startsWith(date) && STATE.slots[k].waitlist && STATE.slots[k].waitlist.includes(user.id)
+      );
+      if (hasWaitlistToday) {
+        showAlert('1일 1대기 제한', '하루에 대기 신청은 최대 1개 타임만 가능합니다.');
+        return;
+      }
+
+      if (!STATE.slots[slotKey]) {
+        STATE.slots[slotKey] = { bookedBy: null, waitlist: [], blocked: false };
+      }
+      const slot = STATE.slots[slotKey];
+
+      if (slot.waitlist.includes(user.id)) {
+        showAlert('대기중', '이미 대기 신청해 둔 타임슬롯입니다.');
+        return;
+      }
+
+      slot.waitlist.push(user.id);
+      addHistory(user.id, 'WAITLIST', `${time} 수업 대기 순번(${slot.waitlist.length}순위) 등록`);
+      showAlert('대기 신청 완료', `${time} 수업 대기 신청이 완료되었습니다. 취소표 발생 시 60초 제안 알림이 전송됩니다.`);
+      render();
+    }
+
+    // Cancel Booking Action & Instant Chain Reaction Fix!
+    function cancelBooking(date, time) {
+      const user = STATE.currentUser;
+      const slotKey = `${date}_${time}`;
+      const slot = STATE.slots[slotKey];
+
+      if (!slot || slot.bookedBy !== user.id) return;
+
+      slot.bookedBy = null;
+      user.remTickets += 1;
+
+      // Enforce 60-second anti-cheating delay
+      STATE.cooldowns[`${user.id}_${slotKey}`] = Date.now() + 60000;
+
+      addHistory(user.id, 'CANCEL', `${time} 수업 취소 (1회 복구)`);
+
+      // INSTANT CHAIN REACTION TRIGGER!
+      if (slot.waitlist && slot.waitlist.length > 0) {
+        const nextUserId = slot.waitlist[0];
+
+        let existingBookingTime = null;
+        Object.keys(STATE.slots).forEach(k => {
+          if (k.startsWith(date) && STATE.slots[k].bookedBy === nextUserId) {
+            existingBookingTime = k.split('_')[1];
+          }
+        });
+
+        STATE.activeProposal = {
+          userId: nextUserId,
+          targetSlotDate: date,
+          targetSlotTime: time,
+          oldSlotTime: existingBookingTime,
+          expiresAt: Date.now() + 60000
+        };
+
+        // Notify user immediately with unread red badge
+        notifyUser(nextUserId, `🎉 [취소표 발생!] ${time} 수업 자리가 생겼습니다. 60초 이내에 예약을 변경하시겠습니까?`);
+      }
+
+      showAlert('취소 완료', `${time} 수업 예약이 정상 취소되었습니다. 60초간 동시 재예약이 제한됩니다.`);
+      render();
+    }
+
+    // Accept Proposal (60s Waitlist Upgrade)
+    function acceptProposal() {
+      const prop = STATE.activeProposal;
+      if (!prop) return;
+
+      const user = STATE.members.find(m => m.id === prop.userId);
+      const targetKey = `${prop.targetSlotDate}_${prop.targetSlotTime}`;
+      const targetSlot = STATE.slots[targetKey];
+
+      if (!targetSlot || !user) return;
+
+      targetSlot.bookedBy = user.id;
+      targetSlot.waitlist = targetSlot.waitlist.filter(id => id !== user.id);
+
+      addHistory(user.id, 'WAIT_CONFIRM', `${prop.targetSlotTime} 대기 수업 확정 전환`);
+
+      let chainOldTime = prop.oldSlotTime;
+      STATE.activeProposal = null;
+
+      if (chainOldTime) {
+        const oldKey = `${prop.targetSlotDate}_${chainOldTime}`;
+        const oldSlot = STATE.slots[oldKey];
+        if (oldSlot && oldSlot.bookedBy === user.id) {
+          oldSlot.bookedBy = null;
+          addHistory(user.id, 'AUTO_CANCEL', `${chainOldTime} 기존 수업 대기 승환으로 자동 취소`);
+
+          STATE.cooldowns[`${user.id}_${oldKey}`] = Date.now() + 60000;
+
+          if (oldSlot.waitlist && oldSlot.waitlist.length > 0) {
+            const chainNextUserId = oldSlot.waitlist[0];
+            
+            let userExistingBooking = null;
+            Object.keys(STATE.slots).forEach(k => {
+              if (k.startsWith(prop.targetSlotDate) && STATE.slots[k].bookedBy === chainNextUserId) {
+                userExistingBooking = k.split('_')[1];
+              }
+            });
+
+            STATE.activeProposal = {
+              userId: chainNextUserId,
+              targetSlotDate: prop.targetSlotDate,
+              targetSlotTime: chainOldTime,
+              oldSlotTime: userExistingBooking,
+              expiresAt: Date.now() + 60000
+            };
+            notifyUser(chainNextUserId, `⚡ [연쇄 승환 알림!] 기존 회원의 변경으로 ${chainOldTime} 수업 자리가 생겼습니다! 60초 내에 수락하세요.`);
+          }
+        }
+      }
+
+      showAlert('수업 변경 완료', `${prop.targetSlotTime} 수업으로 성공적으로 확정 변경되었습니다.`);
+      render();
+    }
+
+    function rejectProposal() {
+      if (!STATE.activeProposal) return;
+      const prop = STATE.activeProposal;
+      STATE.activeProposal = null;
+      
+      const slotKey = `${prop.targetSlotDate}_${prop.targetSlotTime}`;
+      if (STATE.slots[slotKey]) {
+        STATE.slots[slotKey].waitlist = STATE.slots[slotKey].waitlist.filter(id => id !== prop.userId);
+      }
+
+      showAlert('제안 거절', '대기 제안을 거절하였습니다.');
+      render();
+    }
+
+    function saveMember(memberData) {
+      if (memberData.id) {
+        const idx = STATE.members.findIndex(m => m.id === memberData.id);
+        if (idx !== -1) {
+          STATE.members[idx] = { ...STATE.members[idx], ...memberData };
+        }
+      } else {
+        const newId = 'mem_' + Date.now();
+        const newMember = {
+          id: newId,
+          name: memberData.name,
+          phone: memberData.phone,
+          password: memberData.password || '1234',
+          remTickets: parseInt(memberData.remTickets) || 10,
+          totalTickets: parseInt(memberData.totalTickets) || 10,
+          startDate: memberData.startDate || '2026-10-01',
+          endDate: memberData.endDate || '2026-12-31',
+          memo: memberData.memo || '',
+          badge: null
+        };
+        STATE.members.push(newMember);
+        STATE.histories[newId] = [{ type: 'REGISTER', title: '신규 수강권 등록 완료', date: new Date().toLocaleDateString(), timestamp: Date.now() }];
+      }
+      STATE.modal = null;
+      showAlert('저장 완료', '회원 정보가 성공적으로 반영되었습니다.');
+      render();
+    }
+
+    function adminSlotAction(date, time, action, targetUserId = null) {
+      const slotKey = `${date}_${time}`;
+      if (!STATE.slots[slotKey]) {
+        STATE.slots[slotKey] = { bookedBy: null, waitlist: [], blocked: false };
+      }
+      const slot = STATE.slots[slotKey];
+
+      if (action === 'BLOCK') {
+        slot.blocked = !slot.blocked;
+      } else if (action === 'PROXY_BOOK' && targetUserId) {
+        slot.bookedBy = targetUserId;
+        const targetUser = STATE.members.find(m => m.id === targetUserId);
+        if (targetUser) {
+          targetUser.remTickets = Math.max(0, targetUser.remTickets - 1);
+          addHistory(targetUserId, 'PROXY_BOOKING', `관리자 대리 예약 (${date} ${time})`);
+        }
+      } else if (action === 'ATTEND') {
+        showAlert('출석 완료', `${time} 수업 출석 처리가 정상 기록되었습니다.`);
+      } else if (action === 'NOSHOW') {
+        showAlert('노쇼 처리', `${time} 수업 무단 불참 노쇼 처리가 되었습니다.`);
+      } else if (action === 'CANCEL_ADMIN') {
+        const bookedId = slot.bookedBy;
+        slot.bookedBy = null;
+        if (bookedId) {
+          const u = STATE.members.find(m => m.id === bookedId);
+          if (u) u.remTickets += 1;
+        }
+      }
+
+      STATE.modal = null;
+      render();
+    }
+
+    function addHistory(userId, type, title) {
+      if (!STATE.histories[userId]) STATE.histories[userId] = [];
+      STATE.histories[userId].unshift({
+        type,
+        title,
+        date: new Date().toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+        timestamp: Date.now()
+      });
+    }
+
+    // Instant Notification Trigger Handler & Real-Time Badge Update
+    function notifyUser(userId, message) {
+      STATE.notifications.unshift({
+        id: Date.now(),
+        userId,
+        message,
+        read: false,
+        time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+      });
+      render();
+    }
+
+    function showAlert(title, message) {
+      STATE.modal = { type: 'ALERT', data: { title, message } };
+      render(); // Immediate re-render ensures 0.1s pop-up display for the current member!
+    }
+
+    // --- MAIN RENDER ROUTER ---
+    function render() {
+      const app = document.getElementById('app');
+      app.innerHTML = '';
+
+      if (!STATE.currentUser) {
+        app.appendChild(renderLoginForm());
+        lucide.createIcons();
+        return;
+      }
+
+      app.appendChild(renderHeader());
+
+      // Check Real-Time Active Proposal Banner
+      if (STATE.activeProposal && STATE.activeProposal.userId === STATE.currentUser.id) {
+        app.appendChild(renderProposalBanner());
+      }
+
+      if (STATE.isAdmin) {
+        app.appendChild(renderAdminDashboard());
+      } else {
+        if (STATE.activeTab === 'booking') app.appendChild(renderBookingView());
+        else if (STATE.activeTab === 'my-bookings') app.appendChild(renderMyBookingsView());
+        else if (STATE.activeTab === 'pass') app.appendChild(renderPassCardView());
+        
+        app.appendChild(renderBottomNav());
+      }
+
+      if (STATE.modal) {
+        app.appendChild(renderModal());
+      }
+
+      lucide.createIcons();
+    }
+
+    // 1. LOGIN FORM COMPONENT
+    function renderLoginForm() {
+      const div = document.createElement('div');
+      div.className = 'min-h-screen flex flex-col justify-center px-6 py-12 bg-sand-50';
+
+      div.innerHTML = `
+        <div class="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-sand-200 text-sand-800 mb-4 shadow-sm">
+            <i data-lucide="dumbbell" class="w-8 h-8 text-sand-700"></i>
+          </div>
+          <h2 class="text-2xl font-bold tracking-tight text-sand-900">IM GYM PT</h2>
+          <p class="mt-1 text-sm text-sand-600">1인 전용 맞춤형 프리미엄 PT 스튜디오</p>
+        </div>
+
+        <div class="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div class="bg-white py-8 px-6 shadow-xl rounded-2xl border border-sand-200">
+            <div class="flex border-b border-sand-200 mb-6">
+              <button id="tab-member-btn" onclick="toggleLoginType('member')" class="w-1/2 pb-3 text-center text-sm font-semibold border-b-2 border-sand-700 text-sand-900">
+                회원 로그인
+              </button>
+              <button id="tab-admin-btn" onclick="toggleLoginType('admin')" class="w-1/2 pb-3 text-center text-sm font-semibold border-b-2 border-transparent text-sand-400 hover:text-sand-700">
+                👑 관리자 로그인
+              </button>
+            </div>
+
+            <form id="form-member" onsubmit="event.preventDefault(); handleLogin(this.phone.value, this.password.value, this.remember.checked);" class="space-y-4">
+              <div>
+                <label class="block text-xs font-semibold text-sand-700 uppercase mb-1">휴대폰 번호 (ID)</label>
+                <div class="relative">
+                  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-sand-400">
+                    <i data-lucide="phone" class="w-4 h-4"></i>
+                  </div>
+                  <input type="text" name="phone" placeholder="010-1234-5678" value="010-1234-5678" required class="pl-10 w-full px-3 py-2.5 bg-sand-50 border border-sand-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sand-500">
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-sand-700 uppercase mb-1">비밀번호</label>
+                <div class="relative">
+                  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-sand-400">
+                    <i data-lucide="lock" class="w-4 h-4"></i>
+                  </div>
+                  <input type="password" name="password" placeholder="비밀번호" value="1234" required class="pl-10 w-full px-3 py-2.5 bg-sand-50 border border-sand-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sand-500">
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between text-xs text-sand-600">
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input type="checkbox" name="remember" checked class="rounded border-sand-300 text-sand-700 focus:ring-sand-500">
+                  <span>로그인 정보 기억하기</span>
+                </label>
+              </div>
+
+              <button type="submit" class="w-full py-3 bg-sand-700 hover:bg-sand-800 text-white font-semibold rounded-xl text-sm shadow-md transition duration-200">
+                로그인하기
+              </button>
+            </form>
+
+            <form id="form-admin" onsubmit="event.preventDefault(); handleAdminLogin(this.adminPw.value, this.rememberAdmin.checked);" class="space-y-4 hidden">
+              <div>
+                <label class="block text-xs font-semibold text-sand-700 uppercase mb-1">관리자 인증 비밀번호</label>
+                <div class="relative">
+                  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-sand-400">
+                    <i data-lucide="key" class="w-4 h-4"></i>
+                  </div>
+                  <input type="password" name="adminPw" placeholder="관리자 비밀번호 (기본: 2685)" value="2685" required class="pl-10 w-full px-3 py-2.5 bg-sand-50 border border-sand-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sand-500">
+                </div>
+              </div>
+
+              <div class="flex items-center text-xs text-sand-600">
+                <label class="flex items-center space-x-2 cursor-pointer">
+                  <input type="checkbox" name="rememberAdmin" checked class="rounded border-sand-300 text-sand-700 focus:ring-sand-500">
+                  <span>관리자 비밀번호 기억하기</span>
+                </label>
+              </div>
+
+              <button type="submit" class="w-full py-3 bg-khaki-600 hover:bg-khaki-700 text-white font-semibold rounded-xl text-sm shadow-md transition duration-200">
+                👑 관리자 대시보드 접속
+              </button>
+            </form>
+
+            <div class="mt-6 pt-4 border-t border-sand-100 text-xs text-sand-500 text-center">
+              <p class="font-semibold text-sand-700 mb-1">💡 시뮬레이션 테스트 계정</p>
+              <p>김민수(010-1234-5678) / 이영희(010-2222-3333) / 박철수(010-5555-6666)</p>
+            </div>
+          </div>
+        </div>
+      `;
+      return div;
+    }
+
+    window.toggleLoginType = function(type) {
+      const fMem = document.getElementById('form-member');
+      const fAdm = document.getElementById('form-admin');
+      const tMem = document.getElementById('tab-member-btn');
+      const tAdm = document.getElementById('tab-admin-btn');
+
+      if (type === 'member') {
+        fMem.classList.remove('hidden');
+        fAdm.classList.add('hidden');
+        tMem.className = 'w-1/2 pb-3 text-center text-sm font-semibold border-b-2 border-sand-700 text-sand-900';
+        tAdm.className = 'w-1/2 pb-3 text-center text-sm font-semibold border-b-2 border-transparent text-sand-400 hover:text-sand-700';
+      } else {
+        fMem.classList.add('hidden');
+        fAdm.classList.remove('hidden');
+        tAdm.className = 'w-1/2 pb-3 text-center text-sm font-semibold border-b-2 border-khaki-600 text-khaki-600';
+        tMem.className = 'w-1/2 pb-3 text-center text-sm font-semibold border-b-2 border-transparent text-sand-400 hover:text-sand-700';
+      }
+    };
+
+    // 2. HEADER & INSTANT NOTIFICATION BADGE
+    function renderHeader() {
+      const div = document.createElement('div');
+      div.className = 'bg-white border-b border-sand-200 sticky top-0 z-30 shadow-sm';
+
+      const unreadCount = STATE.notifications.filter(n => n.userId === STATE.currentUser.id && !n.read).length;
+
+      div.innerHTML = `
+        <div class="bg-sand-900 text-sand-200 text-xs px-4 py-2 flex items-center justify-between overflow-x-auto custom-scrollbar">
+          <span class="font-medium text-sand-300 flex items-center gap-1 shrink-0">
+            <i data-lucide="repeat" class="w-3.5 h-3.5"></i> 시뮬레이터:
+          </span>
+          <div class="flex items-center gap-1.5 shrink-0">
+            ${STATE.members.map(m => `
+              <button onclick="switchUser('${m.id}')" class="px-2 py-0.5 rounded-full text-xs font-medium transition ${!STATE.isAdmin && STATE.currentUser.id === m.id ? 'bg-sand-500 text-white font-bold' : 'bg-sand-800 text-sand-300 hover:bg-sand-700'}">
+                ${m.name} (${m.remTickets}회)
+              </button>
+            `).join('')}
+            <button onclick="switchUser('admin')" class="px-2 py-0.5 rounded-full text-xs font-medium transition ${STATE.isAdmin ? 'bg-khaki-500 text-white font-bold' : 'bg-sand-800 text-sand-300 hover:bg-sand-700'}">
+              👑 관리자
+            </button>
+          </div>
+        </div>
+
+        <div class="px-4 py-3 flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <div class="w-8 h-8 rounded-lg bg-sand-700 text-white flex items-center justify-center font-bold text-sm">
+              IM
+            </div>
+            <div>
+              <h1 class="text-base font-bold text-sand-900 leading-tight">아이엠짐PT</h1>
+              <p class="text-[10px] text-sand-500">${STATE.isAdmin ? '👑 관리자 대시보드' : STATE.currentUser.name + ' 회원님'}</p>
+            </div>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            ${!STATE.isAdmin ? `
+              <button onclick="openNotificationModal()" class="relative p-2 text-sand-600 hover:bg-sand-100 rounded-full transition" title="알림함">
+                <i data-lucide="bell" class="w-5 h-5"></i>
+                ${unreadCount > 0 ? `<span class="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span><span class="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full"></span>` : ''}
+              </button>
+            ` : ''}
+            <button onclick="handleLogout()" class="p-2 text-sand-500 hover:text-red-600 hover:bg-sand-100 rounded-full transition" title="로그아웃">
+              <i data-lucide="log-out" class="w-5 h-5"></i>
+            </button>
+          </div>
+        </div>
+      `;
+      return div;
+    }
+
+    // 3. PROPOSAL BANNER (REAL-TIME 60s COUNTER)
+    function renderProposalBanner() {
+      const prop = STATE.activeProposal;
+      const remSec = Math.max(0, Math.ceil((prop.expiresAt - Date.now()) / 1000));
+
+      const div = document.createElement('div');
+      div.className = 'bg-amber-500 text-white px-4 py-3 shadow-md animate-pulse-light flex flex-col sm:flex-row items-center justify-between gap-2 border-b border-amber-600';
+
+      div.innerHTML = `
+        <div class="flex items-center space-x-2 text-sm font-semibold">
+          <i data-lucide="sparkles" class="w-5 h-5 text-yellow-200"></i>
+          <span>🎉 [수업 변경 제안] ${prop.targetSlotTime} 취소표 발생! (${remSec}초 남음)</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="acceptProposal()" class="px-3 py-1 bg-white text-amber-700 font-bold rounded-lg text-xs shadow hover:bg-amber-50">
+            [${prop.targetSlotTime}로 변경 확정]
+          </button>
+          <button onclick="rejectProposal()" class="px-2 py-1 bg-amber-700 text-amber-100 rounded-lg text-xs hover:bg-amber-800">
+            거절
+          </button>
+        </div>
+      `;
+      return div;
+    }
+
+    // 4. BOOKING VIEW (PRIVACY ENFORCED & INSTANT ALERTS)
+    function renderBookingView() {
+      const container = document.createElement('div');
+      container.className = 'p-4 space-y-4 flex-1';
+
+      const weekDates = [
+        { day: '월', date: '2026-10-26' },
+        { day: '화', date: '2026-10-27' },
+        { day: '수', date: '2026-10-28' },
+        { day: '목', date: '2026-10-29' },
+        { day: '금', date: '2026-10-30' },
+        { day: '토 (오픈)', date: '2026-10-31' },
+      ];
+
+      let masterWarning = '';
+      if (!STATE.scheduleOpen) {
+        masterWarning = `
+          <div class="p-3 bg-red-100 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
+            <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0"></i>
+            <span>현재 관리자가 스케줄 점검/오픈 준비를 위해 전체 예약을 일시 중지했습니다.</span>
+          </div>
+        `;
+      }
+
+      let satTimerInfo = '';
+      if (STATE.selectedDate === '2026-10-31' && STATE.saturdayTimer.enabled) {
+        const openTime = new Date(STATE.saturdayTimer.openTime).toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        satTimerInfo = `
+          <div class="p-3 bg-sand-200 border border-sand-300 rounded-xl text-sand-800 text-xs flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="clock" class="w-4 h-4 text-sand-600"></i>
+              <span>⏳ 토요일 예약 오픈 예정 시각: <strong>${openTime}</strong></span>
+            </div>
+            <span class="px-2 py-0.5 bg-sand-700 text-white rounded text-[10px]">대기 중</span>
+          </div>
+        `;
+      }
+
+      const timeSlots = [];
+      for (let h = 9; h <= 22; h++) {
+        const hourStr = h < 10 ? '0' + h : '' + h;
+        timeSlots.push(`${hourStr}:00`);
+        timeSlots.push(`${hourStr}:30`);
+      }
+
+      container.innerHTML = `
+        ${masterWarning}
+
+        <div class="bg-white p-2 rounded-2xl shadow-sm border border-sand-200 flex justify-between gap-1 overflow-x-auto custom-scrollbar">
+          ${weekDates.map(d => {
+            const isSelected = STATE.selectedDate === d.date;
+            return `
+              <button onclick="STATE.selectedDate = '${d.date}'; render();" class="flex-1 min-w-[50px] py-2 px-1 rounded-xl flex flex-col items-center transition ${isSelected ? 'bg-sand-700 text-white font-bold shadow-md' : 'hover:bg-sand-100 text-sand-700'}">
+                <span class="text-[10px] opacity-80">${d.day}</span>
+                <span class="text-xs font-semibold mt-0.5">${d.date.substring(8)}일</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
+
+        ${satTimerInfo}
+
+        <div class="bg-white p-3.5 rounded-2xl border border-sand-200 shadow-sm flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="ticket" class="w-4 h-4 text-sand-600"></i>
+            <span class="text-xs font-medium text-sand-800">잔여 수강권: <strong class="text-sand-900 font-bold">${STATE.currentUser.remTickets}회</strong> / ${STATE.currentUser.totalTickets}회</span>
+          </div>
+          <span class="text-[11px] text-sand-500">1일 1수업 예약 / 1대기 원칙</span>
+        </div>
+
+        <div class="space-y-2">
+          <h3 class="text-xs font-bold text-sand-700 uppercase tracking-wider flex items-center gap-1">
+            <i data-lucide="calendar" class="w-3.5 h-3.5"></i> ${STATE.selectedDate} 수업 타임슬롯
+          </h3>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            ${timeSlots.map(time => {
+              const slotKey = `${STATE.selectedDate}_${time}`;
+              const slot = STATE.slots[slotKey] || { bookedBy: null, waitlist: [], blocked: false };
+              
+              const isMyBooking = slot.bookedBy === STATE.currentUser.id;
+              const isBooked = !!slot.bookedBy;
+              const isMyWaitlist = slot.waitlist && slot.waitlist.includes(STATE.currentUser.id);
+              const isBlocked = slot.blocked;
+
+              let statusLabel = '예약 가능';
+              let btnClass = 'bg-white border-sand-300 text-sand-800 hover:border-sand-500 hover:bg-sand-100';
+              let badgeText = '';
+
+              if (isBlocked) {
+                statusLabel = '센터 휴무 / 차단';
+                btnClass = 'bg-sand-200 border-sand-200 text-sand-400 cursor-not-allowed';
+              } else if (isMyBooking) {
+                statusLabel = '내가 예약함';
+                btnClass = 'bg-sand-700 border-sand-700 text-white font-bold shadow';
+                badgeText = '내 예약';
+              } else if (isBooked) {
+                statusLabel = '예약 마감'; // PRIVACY SAFE!
+                btnClass = 'bg-sand-100 border-sand-200 text-sand-500';
+              }
+
+              return `
+                <div class="p-3 rounded-xl border ${btnClass} flex flex-col justify-between transition relative">
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-bold">${time}</span>
+                    ${badgeText ? `<span class="px-1.5 py-0.5 bg-white/20 text-white text-[9px] rounded-full font-medium">${badgeText}</span>` : ''}
+                  </div>
+
+                  <div class="mt-2 flex items-center justify-between">
+                    <span class="text-[11px] font-medium opacity-90">${statusLabel}</span>
+                    
+                    ${!isBlocked && !isMyBooking ? `
+                      ${!isBooked ? `
+                        <button onclick="bookSlot('${STATE.selectedDate}', '${time}')" class="px-2.5 py-1 bg-sand-700 hover:bg-sand-800 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+                          예약
+                        </button>
+                      ` : `
+                        ${isMyWaitlist ? `
+                          <span class="px-2 py-1 bg-amber-100 text-amber-800 rounded-lg text-xs font-semibold">대기중</span>
+                        ` : `
+                          <button onclick="joinWaitlist('${STATE.selectedDate}', '${time}')" class="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold shadow-sm transition">
+                            대기
+                          </button>
+                        `}
+                      `}
+                    ` : ''}
+
+                    ${isMyBooking ? `
+                      <button onclick="cancelBooking('${STATE.selectedDate}', '${time}')" class="px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded-lg text-xs font-medium shadow-sm transition">
+                        취소
+                      </button>
+                    ` : ''}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+      return container;
+    }
+
+    // 5. MY BOOKINGS VIEW
+    function renderMyBookingsView() {
+      const container = document.createElement('div');
+      container.className = 'p-4 space-y-5 flex-1';
+
+      const myBookings = [];
+      const myWaitlists = [];
+
+      Object.keys(STATE.slots).forEach(key => {
+        const [date, time] = key.split('_');
+        const slot = STATE.slots[key];
+        if (slot.bookedBy === STATE.currentUser.id) {
+          myBookings.push({ date, time });
+        }
+        if (slot.waitlist && slot.waitlist.includes(STATE.currentUser.id)) {
+          const rank = slot.waitlist.indexOf(STATE.currentUser.id) + 1;
+          myWaitlists.push({ date, time, rank });
+        }
+      });
+
+      container.innerHTML = `
+        <h2 class="text-base font-bold text-sand-900 flex items-center gap-1.5">
+          <i data-lucide="clipboard-list" class="w-5 h-5 text-sand-700"></i> 내 수업 및 대기 현황
+        </h2>
+
+        <div class="space-y-2">
+          <h3 class="text-xs font-bold text-sand-600 uppercase tracking-wider">확정된 수업 목록 (${myBookings.length}건)</h3>
+          ${myBookings.length === 0 ? `
+            <div class="bg-white p-6 rounded-2xl border border-sand-200 text-center text-xs text-sand-400">
+              예약된 수업이 없습니다. 수업 예약 탭에서 일정을 선택하세요.
+            </div>
+          ` : `
+            <div class="space-y-2">
+              ${myBookings.map(b => `
+                <div class="bg-white p-3.5 rounded-2xl border border-sand-200 shadow-sm flex items-center justify-between">
+                  <div>
+                    <div class="text-xs font-bold text-sand-900">${b.date}</div>
+                    <div class="text-sm font-extrabold text-sand-700">${b.time} PT 수업</div>
+                  </div>
+                  <button onclick="cancelBooking('${b.date}', '${b.time}')" class="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-semibold rounded-xl text-xs border border-red-200 transition">
+                    예약 취소
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+
+        <div class="space-y-2">
+          <h3 class="text-xs font-bold text-sand-600 uppercase tracking-wider">신청 중인 대기 목록 (${myWaitlists.length}건)</h3>
+          ${myWaitlists.length === 0 ? `
+            <div class="bg-white p-6 rounded-2xl border border-sand-200 text-center text-xs text-sand-400">
+              신청된 대기가 없습니다.
+            </div>
+          ` : `
+            <div class="space-y-2">
+              ${myWaitlists.map(w => `
+                <div class="bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200/80 shadow-sm flex items-center justify-between">
+                  <div>
+                    <div class="text-xs font-bold text-amber-900">${w.date}</div>
+                    <div class="text-sm font-extrabold text-amber-800">${w.time} 수업 (대기 ${w.rank}순위)</div>
+                  </div>
+                  <span class="text-xs font-semibold px-2.5 py-1 bg-amber-200 text-amber-900 rounded-lg">
+                    취소표 대기 중
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+      return container;
+    }
+
+    // 6. PASS CARD VIEW
+    function renderPassCardView() {
+      const container = document.createElement('div');
+      container.className = 'p-4 space-y-5 flex-1';
+
+      const user = STATE.currentUser;
+      const history = STATE.histories[user.id] || [];
+      const pct = Math.round((user.remTickets / user.totalTickets) * 100);
+
+      container.innerHTML = `
+        <h2 class="text-base font-bold text-sand-900 flex items-center gap-1.5">
+          <i data-lucide="credit-card" class="w-5 h-5 text-sand-700"></i> 내 수강권 카드
+        </h2>
+
+        <div class="bg-gradient-to-br from-sand-800 via-sand-700 to-khaki-600 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden">
+          <div class="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-xl pointer-events-none"></div>
+          
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <span class="text-[10px] tracking-widest uppercase font-semibold text-sand-200">PERSONAL TRAINING</span>
+              <h3 class="text-lg font-bold">1:1 맞춤 PT 30분 수강권</h3>
+            </div>
+            <span class="px-2.5 py-1 bg-white/20 backdrop-blur-md rounded-full text-xs font-semibold">
+              정상 이용 중
+            </span>
+          </div>
+
+          <div class="my-4">
+            <div class="flex justify-between items-baseline mb-1">
+              <span class="text-xs text-sand-200">잔여 횟수</span>
+              <span class="text-2xl font-black">${user.remTickets} <span class="text-xs font-normal text-sand-200">/ ${user.totalTickets}회</span></span>
+            </div>
+            <div class="w-full h-2.5 bg-black/20 rounded-full overflow-hidden">
+              <div class="h-full bg-sand-200 rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+            </div>
+          </div>
+
+          <div class="pt-3 border-t border-white/15 flex justify-between items-center text-xs text-sand-200">
+            <span>이용 기간: ${user.startDate} ~ ${user.endDate}</span>
+            <button onclick="openPasswordChangeModal()" class="text-white underline font-semibold hover:text-sand-100">
+              비밀번호 변경
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <h3 class="text-xs font-bold text-sand-700 uppercase tracking-wider flex items-center gap-1">
+            <i data-lucide="history" class="w-3.5 h-3.5"></i> 수강권 이용 이력
+          </h3>
+
+          ${history.length === 0 ? `
+            <div class="bg-white p-6 rounded-2xl border border-sand-200 text-center text-xs text-sand-400">
+              최근 이용 기록이 없습니다.
+            </div>
+          ` : `
+            <div class="bg-white p-4 rounded-2xl border border-sand-200 shadow-sm space-y-3">
+              ${history.map(h => `
+                <div class="flex items-start space-x-3 pb-3 border-b border-sand-100 last:border-0 last:pb-0">
+                  <div class="w-7 h-7 rounded-full bg-sand-100 text-sand-700 flex items-center justify-center shrink-0 mt-0.5">
+                    <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                  </div>
+                  <div class="flex-1">
+                    <p class="text-xs font-bold text-sand-900">${h.title}</p>
+                    <p class="text-[10px] text-sand-400 mt-0.5">${h.date}</p>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+      return container;
+    }
+
+    // 7. BOTTOM NAVIGATION BAR
+    function renderBottomNav() {
+      const nav = document.createElement('div');
+      nav.className = 'fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-sand-200 flex justify-around py-2.5 z-20 md:max-w-4xl';
+
+      const tabs = [
+        { id: 'booking', label: '수업예약', icon: 'calendar' },
+        { id: 'my-bookings', label: '내 예약', icon: 'clipboard-list' },
+        { id: 'pass', label: '수강권', icon: 'credit-card' },
+      ];
+
+      nav.innerHTML = tabs.map(t => {
+        const isActive = STATE.activeTab === t.id;
+        return `
+          <button onclick="STATE.activeTab = '${t.id}'; render();" class="flex flex-col items-center flex-1 transition ${isActive ? 'text-sand-800 font-bold' : 'text-sand-400 hover:text-sand-600'}">
+            <i data-lucide="${t.icon}" class="w-5 h-5 mb-0.5"></i>
+            <span class="text-[10px]">${t.label}</span>
+          </button>
+        `;
+      }).join('');
+
+      return nav;
+    }
+
+    // 8. ADMIN DASHBOARD VIEW
+    function renderAdminDashboard() {
+      const container = document.createElement('div');
+      container.className = 'p-4 space-y-5 flex-1';
+
+      container.innerHTML = `
+        <div class="bg-white p-4 rounded-2xl border border-sand-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div class="flex items-center space-x-2">
+            <button onclick="STATE.scheduleOpen = !STATE.scheduleOpen; render();" class="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm ${STATE.scheduleOpen ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}">
+              <i data-lucide="${STATE.scheduleOpen ? 'power' : 'power-off'}" class="w-4 h-4"></i>
+              <span>스케줄 마스터: ${STATE.scheduleOpen ? '🟢 영업 중 (예약 가능)' : '🔴 마감 (예약 차단)'}</span>
+            </button>
+          </div>
+
+          <div class="flex items-center space-x-2 text-xs text-sand-700 bg-sand-50 p-2 rounded-xl border border-sand-200">
+            <span class="font-semibold shrink-0">⏰ 토요일 오픈 타이머:</span>
+            <input type="datetime-local" value="${STATE.saturdayTimer.openTime}" onchange="STATE.saturdayTimer.openTime = this.value; render();" class="bg-white border border-sand-300 rounded px-2 py-1 text-xs">
+          </div>
+        </div>
+
+        <div class="flex border-b border-sand-200 space-x-4">
+          <button onclick="STATE.adminTab = 'schedule'; render();" class="pb-2.5 text-sm font-bold border-b-2 transition ${STATE.adminTab === 'schedule' ? 'border-khaki-600 text-khaki-600' : 'border-transparent text-sand-400 hover:text-sand-700'}">
+            📅 주간/일간 스케줄 종합표
+          </button>
+          <button onclick="STATE.adminTab = 'members'; render();" class="pb-2.5 text-sm font-bold border-b-2 transition ${STATE.adminTab === 'members' ? 'border-khaki-600 text-khaki-600' : 'border-transparent text-sand-400 hover:text-sand-700'}">
+            👥 회원 수강권 관리 & 등록
+          </button>
+        </div>
+
+        ${STATE.adminTab === 'schedule' ? renderAdminScheduleTab() : renderAdminMembersTab()}
+      `;
+      return container;
+    }
+
+    function renderAdminScheduleTab() {
+      const dates = ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30'];
+      const timeSlots = [];
+      for (let h = 9; h <= 22; h++) {
+        const hourStr = h < 10 ? '0' + h : '' + h;
+        timeSlots.push(`${hourStr}:00`);
+        timeSlots.push(`${hourStr}:30`);
+      }
+
+      return `
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-sand-900">주간 30분 타임슬롯 스케줄 현황 (원클릭 클릭 시 대리예약/차단 모달)</h3>
+            <span class="text-xs text-sand-500">선택한 날짜: <strong>${STATE.selectedDate}</strong></span>
+          </div>
+
+          <div class="flex gap-2 overflow-x-auto pb-1">
+            ${dates.map(d => `
+              <button onclick="STATE.selectedDate = '${d}'; render();" class="px-3 py-1.5 rounded-xl text-xs font-semibold transition ${STATE.selectedDate === d ? 'bg-khaki-600 text-white' : 'bg-white border border-sand-200 text-sand-700 hover:bg-sand-100'}">
+                ${d}
+              </button>
+            `).join('')}
+          </div>
+
+          <div class="bg-white rounded-2xl border border-sand-200 overflow-hidden shadow-sm">
+            <div class="divide-y divide-sand-100">
+              ${timeSlots.map(time => {
+                const slotKey = `${STATE.selectedDate}_${time}`;
+                const slot = STATE.slots[slotKey] || { bookedBy: null, waitlist: [], blocked: false };
+                
+                const bookedUser = slot.bookedBy ? STATE.members.find(m => m.id === slot.bookedBy) : null;
+                const waitCount = slot.waitlist ? slot.waitlist.length : 0;
+
+                return `
+                  <div onclick="openAdminSlotModal('${STATE.selectedDate}', '${time}')" class="p-3 hover:bg-sand-50 transition cursor-pointer flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                      <span class="text-sm font-extrabold text-sand-800 w-14">${time}</span>
+                      ${slot.blocked ? `
+                        <span class="px-2.5 py-1 bg-gray-200 text-gray-700 rounded-lg text-xs font-semibold">🔒 차단됨</span>
+                      ` : `
+                        ${bookedUser ? `
+                          <div class="flex items-center space-x-2">
+                            <span class="px-2.5 py-1 bg-khaki-500 text-white rounded-lg text-xs font-bold">
+                              ${bookedUser.name} 회원 (잔여 ${bookedUser.remTickets}회)
+                            </span>
+                            ${waitCount > 0 ? `<span class="text-xs text-amber-600 font-semibold">[대기 ${waitCount}명]</span>` : ''}
+                          </div>
+                        ` : `
+                          <span class="text-xs text-sand-400">빈 타임슬롯 (원클릭 대리예약 / 차단)</span>
+                        `}
+                      `}
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                      <i data-lucide="chevron-right" class="w-4 h-4 text-sand-400"></i>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAdminMembersTab() {
+      const q = STATE.searchQuery.toLowerCase();
+      const filteredMembers = STATE.members.filter(m => 
+        m.name.toLowerCase().includes(q) || m.phone.includes(q) || (m.memo && m.memo.toLowerCase().includes(q))
+      );
+
+      return `
+        <div class="space-y-4">
+          <div class="flex flex-col sm:flex-row gap-2 justify-between">
+            <div class="relative flex-1">
+              <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-sand-400"></i>
+              <input type="text" placeholder="회원 이름, 전화번호, 메모 실시간 검색..." value="${STATE.searchQuery}" oninput="STATE.searchQuery = this.value; render();" class="pl-9 w-full px-3 py-2 bg-white border border-sand-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-khaki-500">
+            </div>
+
+            <button onclick="openMemberEditModal(null)" class="px-4 py-2 bg-khaki-600 hover:bg-khaki-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center justify-center gap-1">
+              <i data-lucide="user-plus" class="w-4 h-4"></i> 신규 회원 등록
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            ${filteredMembers.map(m => `
+              <div class="bg-white p-4 rounded-2xl border border-sand-200 shadow-sm space-y-3 relative hover:border-sand-400 transition">
+                <div class="flex justify-between items-start">
+                  <div>
+                    <div class="flex items-center space-x-2">
+                      <h4 class="text-base font-bold text-sand-900">${m.name}</h4>
+                      ${m.badge ? `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded-full">${m.badge}</span>` : ''}
+                    </div>
+                    <p class="text-xs text-sand-500 mt-0.5">📞 ${m.phone} | 비번: ${m.password}</p>
+                  </div>
+                  <button onclick="openMemberEditModal('${m.id}')" class="px-3 py-1 bg-sand-100 hover:bg-sand-200 text-sand-800 rounded-lg text-xs font-semibold transition border border-sand-300">
+                    수정하기
+                  </button>
+                </div>
+
+                <div class="bg-sand-50 p-2.5 rounded-xl border border-sand-100 text-xs space-y-1">
+                  <div class="flex justify-between text-sand-800">
+                    <span>잔여 횟수: <strong class="text-sand-900 font-extrabold">${m.remTickets}회</strong></span>
+                    <span>총 등록: ${m.totalTickets}회</span>
+                  </div>
+                  <p class="text-[11px] text-sand-500">기간: ${m.startDate} ~ ${m.endDate}</p>
+                </div>
+
+                ${m.memo ? `
+                  <p class="text-xs text-sand-600 bg-amber-50/50 p-2 rounded-lg border border-amber-100 flex items-start gap-1">
+                    <i data-lucide="sticky-note" class="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5"></i>
+                    <span>${m.memo}</span>
+                  </p>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // 9. GLOBAL MODALS CONTAINER
+    function renderModal() {
+      const modal = STATE.modal;
+      if (!modal) return document.createElement('div');
+
+      const backdrop = document.createElement('div');
+      backdrop.className = 'fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4';
+
+      let innerContent = '';
+
+      if (modal.type === 'ALERT') {
+        innerContent = `
+          <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center space-y-4">
+            <h3 class="text-base font-bold text-sand-900">${modal.data.title}</h3>
+            <p class="text-xs text-sand-600 leading-relaxed">${modal.data.message}</p>
+            <button onclick="STATE.modal = null; render();" class="w-full py-2.5 bg-sand-700 hover:bg-sand-800 text-white rounded-xl text-xs font-bold transition">
+              확인
+            </button>
+          </div>
+        `;
+      } 
+      else if (modal.type === 'PASSWORD_CHANGE') {
+        innerContent = `
+          <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4">
+            <h3 class="text-base font-bold text-sand-900">비밀번호 변경</h3>
+            <form onsubmit="event.preventDefault(); updatePassword(this.newPw.value);" class="space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-sand-700 mb-1">새 비밀번호 입력</label>
+                <input type="password" name="newPw" required placeholder="새 비밀번호" class="w-full px-3 py-2 border border-sand-200 rounded-xl text-xs">
+              </div>
+              <div class="flex gap-2">
+                <button type="button" onclick="STATE.modal = null; render();" class="w-1/2 py-2 bg-sand-100 text-sand-700 rounded-xl text-xs font-semibold">취소</button>
+                <button type="submit" class="w-1/2 py-2 bg-sand-700 text-white rounded-xl text-xs font-bold">변경 완료</button>
+              </div>
+            </form>
+          </div>
+        `;
+      }
+      // EDIT MEMBER MODAL WITH MANDATORY "현재 저장 상태" DISPLAY
+      else if (modal.type === 'EDIT_MEMBER') {
+        const m = modal.data || {};
+        const isEdit = !!m.id;
+
+        innerContent = `
+          <div class="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <h3 class="text-base font-bold text-sand-900">${isEdit ? m.name + ' 회원 정보 수정' : '신규 회원 등록'}</h3>
+            
+            <form onsubmit="event.preventDefault(); saveMemberFromForm(this);" class="space-y-3">
+              <input type="hidden" name="id" value="${m.id || ''}">
+
+              <div>
+                <label class="block text-xs font-semibold text-sand-700 mb-1">회원 이름</label>
+                <input type="text" name="name" value="${m.name || ''}" required placeholder="이름" class="w-full px-3 py-2 border border-sand-200 rounded-xl text-xs">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-sand-700 mb-1">휴대폰 번호 (로그인 ID)</label>
+                <input type="text" name="phone" value="${m.phone || ''}" required placeholder="010-0000-0000" class="w-full px-3 py-2 border border-sand-200 rounded-xl text-xs">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-sand-700 mb-1">비밀번호</label>
+                <input type="text" name="password" value="${m.password || '1234'}" required class="w-full px-3 py-2 border border-sand-200 rounded-xl text-xs">
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-xs font-semibold text-sand-700 mb-1">남은 횟수 (잔여)</label>
+                  <input type="number" name="remTickets" value="${m.remTickets !== undefined ? m.remTickets : 10}" required class="w-full px-3 py-2 border border-sand-200 rounded-xl text-xs">
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-sand-700 mb-1">총 등록 횟수</label>
+                  <input type="number" name="totalTickets" value="${m.totalTickets !== undefined ? m.totalTickets : 10}" required class="w-full px-3 py-2 border border-sand-200 rounded-xl text-xs">
+                </div>
+              </div>
+
+              ${isEdit ? `
+                <div class="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-semibold">
+                  📌 [현재 저장 상태]: 잔여 ${m.remTickets}회 / 총 ${m.totalTickets}회
+                </div>
+              ` : ''}
+
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-xs font-semibold text-sand-700 mb-1">수업 시작일</label>
+                  <input type="date" name="startDate" value="${m.startDate || '2026-10-01'}" class="w-full px-3 py-2 border border-sand-200 rounded-xl text-xs">
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-sand-700 mb-1">수업 만료일</label>
+                  <input type="date" name="endDate" value="${m.endDate || '2026-12-31'}" class="w-full px-3 py-2 border border-sand-200 rounded-xl text-xs">
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-sand-700 mb-1">회원 특징 / 메모 (동명이인 구분)</label>
+                <textarea name="memo" rows="2" placeholder="예: 하체 위주, 60대 어르신 회원님" class="w-full px-3 py-2 border border-sand-200 rounded-xl text-xs">${m.memo || ''}</textarea>
+              </div>
+
+              <div class="flex gap-2 pt-2">
+                <button type="button" onclick="STATE.modal = null; render();" class="w-1/2 py-2.5 bg-sand-100 text-sand-700 rounded-xl text-xs font-semibold">취소</button>
+                <button type="submit" class="w-1/2 py-2.5 bg-khaki-600 text-white rounded-xl text-xs font-bold">저장하기</button>
+              </div>
+            </form>
+          </div>
+        `;
+      }
+      else if (modal.type === 'SLOT_ACTION') {
+        const { date, time } = modal.data;
+        const slotKey = `${date}_${time}`;
+        const slot = STATE.slots[slotKey] || { bookedBy: null, waitlist: [], blocked: false };
+        const bookedUser = slot.bookedBy ? STATE.members.find(m => m.id === slot.bookedBy) : null;
+
+        innerContent = `
+          <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl space-y-4">
+            <h3 class="text-base font-bold text-sand-900">${date} ${time} 타임 관리</h3>
+
+            ${bookedUser ? `
+              <div class="p-3 bg-sand-100 rounded-xl border border-sand-200 text-xs text-sand-800">
+                현재 예약자: <strong>${bookedUser.name} 회원</strong>
+              </div>
+              <div class="space-y-2">
+                <button onclick="adminSlotAction('${date}', '${time}', 'ATTEND')" class="w-full py-2 bg-emerald-600 text-white font-bold text-xs rounded-xl">
+                  [출석 완료] 처리
+                </button>
+                <button onclick="adminSlotAction('${date}', '${time}', 'NOSHOW')" class="w-full py-2 bg-amber-600 text-white font-bold text-xs rounded-xl">
+                  [노쇼 차감] 처리
+                </button>
+                <button onclick="adminSlotAction('${date}', '${time}', 'CANCEL_ADMIN')" class="w-full py-2 bg-red-600 text-white font-bold text-xs rounded-xl">
+                  [관리자 권한 예약 강제 취소]
+                </button>
+              </div>
+            ` : `
+              <div class="space-y-3">
+                <label class="block text-xs font-semibold text-sand-700">어르신 회원 대리 예약</label>
+                <select id="proxy-user-select" class="w-full p-2 border border-sand-200 rounded-xl text-xs bg-sand-50">
+                  ${STATE.members.map(m => `<option value="${m.id}">${m.name} (잔여 ${m.remTickets}회)</option>`).join('')}
+                </select>
+
+                <button onclick="adminSlotAction('${date}', '${time}', 'PROXY_BOOK', document.getElementById('proxy-user-select').value)" class="w-full py-2.5 bg-khaki-600 text-white font-bold text-xs rounded-xl shadow">
+                  선택 회원 대리 예약 완료
+                </button>
+
+                <hr class="border-sand-200">
+
+                <button onclick="adminSlotAction('${date}', '${time}', 'BLOCK')" class="w-full py-2 bg-gray-700 text-white font-bold text-xs rounded-xl">
+                  ${slot.blocked ? '타임슬롯 차단 해제' : '🔒 해당 타임슬롯 차단 (Blackout)'}
+                </button>
+              </div>
+            `}
+
+            <button onclick="STATE.modal = null; render();" class="w-full py-2 bg-sand-100 text-sand-700 text-xs font-semibold rounded-xl">
+              닫기
+            </button>
+          </div>
+        `;
+      }
+
+      backdrop.innerHTML = innerContent;
+      return backdrop;
+    }
+
+    function openPasswordChangeModal() {
+      STATE.modal = { type: 'PASSWORD_CHANGE' };
+      render();
+    }
+
+    function updatePassword(newPw) {
+      if (!newPw) return;
+      STATE.currentUser.password = newPw;
+      STATE.modal = null;
+      showAlert('성공', '비밀번호가 안전하게 변경되었습니다.');
+      render();
+    }
+
+    function openMemberEditModal(memberId) {
+      const member = memberId ? STATE.members.find(m => m.id === memberId) : null;
+      STATE.modal = { type: 'EDIT_MEMBER', data: member || {} };
+      render();
+    }
+
+    function saveMemberFromForm(form) {
+      const memberData = {
+        id: form.id.value,
+        name: form.name.value,
+        phone: form.phone.value,
+        password: form.password.value,
+        remTickets: parseInt(form.remTickets.value),
+        totalTickets: parseInt(form.totalTickets.value),
+        startDate: form.startDate.value,
+        endDate: form.endDate.value,
+        memo: form.memo.value
+      };
+      saveMember(memberData);
+    }
+
+    function openAdminSlotModal(date, time) {
+      STATE.modal = { type: 'SLOT_ACTION', data: { date, time } };
+      render();
+    }
+
+    function openNotificationModal() {
+      const unread = STATE.notifications.filter(n => n.userId === STATE.currentUser.id);
+      unread.forEach(n => n.read = true);
+      const msg = unread.map(n => `• [${n.time}] ${n.message}`).join('\n\n') || '수신된 알림이 없습니다.';
+      showAlert('알림함', msg);
+    }
+
+    window.onload = function() {
+      initApp();
+    };
+  </script>
+</body>
+</html>
